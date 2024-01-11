@@ -1,4 +1,4 @@
-- 👋 Hi, I’m @DALingithub
+- 👋 Hi, I’m ailin, @DALingithub
 - 👀 I’m interested in game develop
 - 🌱 I’m currently learning python and java
 - 💞️ I’m looking to collaborate on game 
