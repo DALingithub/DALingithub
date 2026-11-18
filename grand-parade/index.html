@@ -352,9 +352,9 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   function setOverride(on){manualOn=on;$('overrideBtn').textContent=on?'Override enabled ✓':'Enable override';$('overrideBtn').classList.toggle('recording',on);}
   function makeTrackNodes(){if(!ctx)return;tracks.forEach(v=>{
     const g=ctx.createGain(),p=ctx.createStereoPanner?ctx.createStereoPanner():ctx.createGain();
-    g.gain.value=1;if(p.pan)p.pan.value=v.pan;g.connect(p);p.connect(master);p.connect(wet);v.bus=g;
+    g.gain.value=1;if(p.pan)p.pan.value=v.i===0?0:v.pan;g.connect(p);p.connect(master);p.connect(wet);v.bus=g;
   });updateVoiceGains();}
-  function updateVoiceGains(){if(!ctx)return;tracks.forEach(v=>{if(!v.bus)return;const enabled=!v.muted&&(solo===null||solo===v.i);v.bus.gain.setTargetAtTime(enabled?1:.00001,ctx.currentTime,.055)});}
+  function updateVoiceGains(){if(!ctx)return;tracks.forEach(v=>{if(!v.bus)return;const enabled=!v.muted&&(solo===null||solo===v.i);v.bus.gain.setTargetAtTime(enabled?(v.i===0?1.32:1):.00001,ctx.currentTime,.055)});}
   function setupAudio(){if(ctx)return;const C=window.AudioContext||window.webkitAudioContext;if(!C)throw Error('Web Audio is unsupported in this browser');ctx=new C();
     compressor=ctx.createDynamicsCompressor();compressor.threshold.value=-24;compressor.knee.value=16;compressor.ratio.value=3;compressor.attack.value=.005;compressor.release.value=.25;
     master=ctx.createGain();master.gain.value=.45*volume;master.connect(compressor);compressor.connect(ctx.destination);
