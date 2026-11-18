@@ -1,0 +1,12 @@
+{
+  "name": "grand-parade-receiver",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Realtime CALM normalized data relay for The Grand Parade",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
