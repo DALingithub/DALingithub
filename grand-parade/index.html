@@ -183,15 +183,15 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
         <div class="tracks" id="tracks"></div>
       </section>
       <section class="panel" aria-label="Raw measurement console">
-        <div class="panel-title"><h2>04 / raw measurements</h2><span class="mini-label">SPS30 · µg/m³ · received API values</span></div>
+        <div class="panel-title"><h2>04 / raw measurements</h2><span class="mini-label">SPS30 · µg/m³ · RAW + RECEIVER IDX + 3 MUSIC FEATURES</span></div>
         <div class="raw-meta">
           <span id="rawStatus" class="raw-status">WAITING FOR RAW PM MEASUREMENTS</span>
           <span><button class="btn" id="rawCsvBtn">RAW CSV ↓</button> <button class="btn" id="rawClearBtn">CLEAR</button></span>
         </div>
         <div class="raw-console">
           <table aria-label="Latest raw particulate matter measurements by CALM device">
-            <thead><tr><th>DEVICE</th><th>PM1</th><th>PM2.5</th><th>PM10</th><th>MUSIC IDX</th><th>SENSOR TIMESTAMP (UTC)</th><th>AGE</th></tr></thead>
-            <tbody id="rawRows"><tr><td colspan="7" class="empty">CONNECT TO THE RECEIVER TO VIEW RAW PM DATA</td></tr></tbody>
+            <thead><tr><th>DEVICE</th><th>PM1</th><th>PM2.5</th><th>PM10</th><th>RX IDX</th><th>ABS</th><th>Δ</th><th>GROUP</th><th>SENSOR TIMESTAMP (UTC)</th><th>AGE</th></tr></thead>
+            <tbody id="rawRows"><tr><td colspan="10" class="empty">CONNECT TO THE RECEIVER TO VIEW RAW PM DATA</td></tr></tbody>
           </table>
         </div>
       </section>
@@ -335,7 +335,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       samples.push({time_s:simTime.toFixed(2),device_id:v.id,virtual_instrument:v.name,index:v.smooth.toFixed(5),absolute:v.absolute.toFixed(5),relative:v.relative.toFixed(5),group_difference:v.groupDifference.toFixed(5),pm_ug_m3:v.pmValue??'',quality:liveConnected?(pmActive?'received_pm':v.pmValue!==null?'stale_pm':liveReadings.has(v.id)?'received_index':'unreceived'):'simulated',source:pmActive?'raw_pm_mapping':liveConnected?'external_api':'math_simulation',timestamp_utc:ts});
     }
     if(samples.length>110000)samples.splice(0,20000);
-    renderTracks();updateStats();
+    renderTracks();if(rawMeasurements.size)renderRawConsole();updateStats();
   }
   function setOverride(on){manualOn=on;$('overrideBtn').textContent=on?'Override enabled ✓':'Enable override';$('overrideBtn').classList.toggle('recording',on);}
   function makeTrackNodes(){if(!ctx)return;tracks.forEach(v=>{
@@ -504,8 +504,8 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   }
   function loopPaint(){drawScore();paintTimer=requestAnimationFrame(loopPaint)}
   function download(txt,name,type){const blob=new Blob([txt],{type}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},2000);}
-  function csv(){if(!samples.length)return;const cols=Object.keys(samples[0]);download([cols.join(','),...samples.map(row=>cols.map(k=>row[k]).join(','))].join('\n'),'grand_parade_simulated_10_calm_streams_v03.csv','text/csv;charset=utf-8');}
-  function scoreJson(){download(JSON.stringify({project:'The Grand Parade',version:'v0.3',data_source:'simulation',ai_model_connected:false,seed,scenario,bpm,relation_choice:relationChoice,relation_weight:relationWeight,generated_utc:new Date().toISOString(),conductor_decisions:conductorDecisions,events},null,2),'grand_parade_score_events_v03.json','application/json');}
+  function csv(){if(!samples.length)return;const cols=Object.keys(samples[0]);download([cols.join(','),...samples.map(row=>cols.map(k=>row[k]).join(','))].join('\n'),'grand_parade_music_features_v07.csv','text/csv;charset=utf-8');}
+  function scoreJson(){download(JSON.stringify({project:'The Grand Parade',version:'v0.7',data_source:liveConnected?'external_api':'simulation',ai_model_connected:false,seed,scenario,bpm,relation_choice:relationChoice,relation_weight:relationWeight,generated_utc:new Date().toISOString(),conductor_decisions:conductorDecisions,events},null,2),'grand_parade_score_events_v03.json','application/json');}
   function toggleRecord(){if(recording){recording=false;try{mediaRecorder.stop()}catch(e){statusError(e.message)}$('recordBtn').textContent='REC';$('recordBtn').classList.remove('recording');return;}
     if(!active||!ctx){statusError('Start playback before recording');return;}if(!window.MediaRecorder){statusError('MediaRecorder unavailable in this browser');return;}
     try{const types=['audio/webm;codecs=opus','audio/mp4','audio/webm'];const preferred=types.find(t=>MediaRecorder.isTypeSupported(t));mediaRecorder=new MediaRecorder(recDest.stream,preferred?{mimeType:preferred}:{});chunks=[];mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data)};mediaRecorder.onerror=e=>statusError('Recording error: '+(e.error?.message||'unknown'));mediaRecorder.onstop=()=>{if(!chunks.length){statusError('No audio recorded');return;}const ext=(mediaRecorder.mimeType||'').includes('mp4')?'m4a':'webm';const blob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='grand_parade_electronic_orchestra_v03.'+ext;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},2000);};mediaRecorder.start(250);recording=true;$('recordBtn').textContent='STOP REC';$('recordBtn').classList.add('recording');}catch(e){statusError('Cannot record: '+e.message)}
@@ -525,10 +525,10 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       const tbody=$('rawRows');const rows=[...rawMeasurements.values()].sort((a,b)=>a.device_id.localeCompare(b.device_id));tbody.replaceChildren();
       const now=Date.now();const fmt=x=>typeof x==='number'?x.toFixed(2):'—';
       for(const d of rows){const tr=document.createElement('tr');if(now-d.received_at>30000)tr.className='stale';
-        const cells=[d.device_id,fmt(d.pm.pm1),fmt(d.pm.pm2_5),fmt(d.pm.pm10),d.index.toFixed(3),d.timestamp||'—',Math.round((now-d.received_at)/1000)+'s'];
+        const v=tracks.find(t=>t.id===d.device_id),cells=[d.device_id,fmt(d.pm.pm1),fmt(d.pm.pm2_5),fmt(d.pm.pm10),d.index.toFixed(3),v?v.absolute.toFixed(3):'—',v?(v.relative>=0?'+':'')+v.relative.toFixed(3):'—',v?(v.groupDifference>=0?'+':'')+v.groupDifference.toFixed(3):'—',d.timestamp||'—',Math.round((now-d.received_at)/1000)+'s'];
         for(const v of cells){const td=document.createElement('td');td.textContent=v;tr.append(td)}tbody.append(tr);
       }
-      if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.className='empty';td.textContent=liveConnected?'NO RAW PM DATA RECEIVED · INDEX-ONLY DATA IS NOT RAW PM':'CONNECT TO THE RECEIVER TO VIEW RAW PM DATA';tr.append(td);tbody.append(tr)}
+      if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=10;td.className='empty';td.textContent=liveConnected?'NO RAW PM DATA RECEIVED · INDEX-ONLY DATA IS NOT RAW PM':'CONNECT TO THE RECEIVER TO VIEW RAW PM DATA';tr.append(td);tbody.append(tr)}
       $('rawStatus').textContent=(rows.length?rows.length+' DEVICE(S) / '+rawCount+' RAW SAMPLES RECEIVED':'WAITING FOR RAW PM MEASUREMENTS')+' · '+(liveConnected?'API MODE':'SIMULATION MODE');
     }
     function downloadRawCSV(){
