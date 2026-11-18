@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>The Grand Parade / Audio Patch v0.4</title>
+<title>The Grand Parade / Audio Patch v0.6 — Raw PM Console</title>
 <style>
 
 :root {
@@ -116,6 +116,15 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 .mapping-row { display:flex; justify-content:space-between; gap:8px; padding:7px 0; color:var(--grey); font-size:10px; border-bottom:1px solid var(--hair); }
 .mapping-row:last-child { border:0; }
 .mapping-row strong { font-weight:500; color:var(--ink); text-align:right; }
+.raw-console{padding:0 11px 11px;overflow-x:auto}
+.raw-console table{width:100%;border-collapse:collapse;white-space:nowrap;font:11px/1.5 var(--mono);font-variant-numeric:tabular-nums}
+.raw-console th{font-size:10px;font-weight:500;color:var(--grey);text-align:right;padding:7px;border-bottom:1px solid var(--ink)}
+.raw-console td{text-align:right;padding:6px 7px;border-bottom:1px solid var(--hair)}
+.raw-console th:first-child,.raw-console td:first-child{text-align:left}
+.raw-console .empty{color:var(--grey);padding:18px;text-align:center}
+.raw-meta{padding:8px 11px 7px;color:var(--grey);font-size:10px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.raw-status{color:var(--blue)}
+.raw-console .stale{opacity:.55}
 .foot { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:13px 0 25px; color:var(--grey); font-size:10px; }
 .foot p { margin:0; }
 .foot .flag { color:var(--blue); white-space:nowrap; }
@@ -127,7 +136,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 
 </head>
 <body>
-<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.5 &nbsp; / &nbsp; SIMULATED</span></div></header>
+<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.6 &nbsp; / &nbsp; SIMULATED</span></div></header>
 <main class="container">
   <nav class="toolbar" aria-label="Transport">
     <button class="btn primary" id="playBtn">START</button>
@@ -168,6 +177,19 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       <section class="panel">
         <div class="panel-title"><h2>03 / voices</h2><span class="mini-label">M mute / S solo</span></div>
         <div class="tracks" id="tracks"></div>
+      </section>
+      <section class="panel" aria-label="Raw measurement console">
+        <div class="panel-title"><h2>04 / raw measurements</h2><span class="mini-label">SPS30 · µg/m³ · received API values</span></div>
+        <div class="raw-meta">
+          <span id="rawStatus" class="raw-status">WAITING FOR RAW PM MEASUREMENTS</span>
+          <span><button class="btn" id="rawCsvBtn">RAW CSV ↓</button> <button class="btn" id="rawClearBtn">CLEAR</button></span>
+        </div>
+        <div class="raw-console">
+          <table aria-label="Latest raw particulate matter measurements by CALM device">
+            <thead><tr><th>DEVICE</th><th>PM1</th><th>PM2.5</th><th>PM10</th><th>MUSIC IDX</th><th>SENSOR TIMESTAMP (UTC)</th><th>AGE</th></tr></thead>
+            <tbody id="rawRows"><tr><td colspan="7" class="empty">CONNECT TO THE RECEIVER TO VIEW RAW PM DATA</td></tr></tbody>
+          </table>
+        </div>
       </section>
     </div>
     <aside class="side">
@@ -238,6 +260,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   ];
   const tracks=CONFIG.map((r,i)=>({id:'CALM-'+String(i+1).padStart(2,'0'),i,name:r[0],analog:r[1],group:r[2],type:r[3],base:r[4],pan:r[5],color:r[6],history:[],smooth:.37,raw:.37,trend:0,volatility:0,muted:false,lastData:0,bus:null}));
   let liveStream=null,liveConnected=false,liveReadings=new Map(),liveUrl='';
+  const rawMeasurements=new Map(),rawLog=[]; let rawCount=0;
    let scenario='city',movement=0,bpm=68,influence=.75,density=.55,volume=.55,seed=2026,simTick=0,simTime=0,active=false,step=0,bar=0,solo=null,invited=null,manualOn=false,selected=0;
   let relationChoice='auto',relationWeight=.80,relation={mode:'echo',caller:0,responder:5,outsider:null,reason:'Awaiting first phrase'},lastCallDegree=2;
   const conductorDecisions=[];
@@ -443,8 +466,28 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   $('overrideBtn').addEventListener('click',()=>setOverride(!manualOn));$('clearOverrideBtn').addEventListener('click',()=>setOverride(false));
   $('relationMode').addEventListener('change',e=>{relationChoice=e.target.value;decideRelation();});
   $('relationWeight').addEventListener('input',e=>{relationWeight=Number(e.target.value)/100;$('relationWeightN').textContent=e.target.value+'%';});
-  function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.5 / API INPUT':'v0.5 / SIMULATED';}
-   function disconnectLive(){if(liveStream){liveStream.close();liveStream=null;}liveConnected=false;liveReadings.clear();setSourceStatus('Simulation / no API connected');$('status').textContent=active?'PLAYING · simulated data':'READY / SIMULATED INPUT';}
+  function renderRawConsole(){
+      const tbody=$('rawRows');const rows=[...rawMeasurements.values()].sort((a,b)=>a.device_id.localeCompare(b.device_id));tbody.replaceChildren();
+      const now=Date.now();const fmt=x=>typeof x==='number'?x.toFixed(2):'—';
+      for(const d of rows){const tr=document.createElement('tr');if(now-d.received_at>30000)tr.className='stale';
+        const cells=[d.device_id,fmt(d.pm.pm1),fmt(d.pm.pm2_5),fmt(d.pm.pm10),d.index.toFixed(3),d.timestamp||'—',Math.round((now-d.received_at)/1000)+'s'];
+        for(const v of cells){const td=document.createElement('td');td.textContent=v;tr.append(td)}tbody.append(tr);
+      }
+      if(!rows.length){const tr=document.createElement('tr');const td=document.createElement('td');td.colSpan=7;td.className='empty';td.textContent=liveConnected?'NO RAW PM DATA RECEIVED · INDEX-ONLY DATA IS NOT RAW PM':'CONNECT TO THE RECEIVER TO VIEW RAW PM DATA';tr.append(td);tbody.append(tr)}
+      $('rawStatus').textContent=(rows.length?rows.length+' DEVICE(S) / '+rawCount+' RAW SAMPLES RECEIVED':'WAITING FOR RAW PM MEASUREMENTS')+' · '+(liveConnected?'API MODE':'SIMULATION MODE');
+    }
+    function downloadRawCSV(){
+      if(!rawLog.length){$('rawStatus').textContent='NO RAW PM DATA TO EXPORT';return;}
+      const fields=['device_id','timestamp','pm1','pm2_5','pm10','pm_unit','index','received_utc'];
+      const csvValue=v=>'"'+String(v??'').replaceAll('"','""')+'"';
+      const data=[fields.join(','),...rawLog.map(d=>[d.device_id,d.timestamp,d.pm.pm1,d.pm.pm2_5,d.pm.pm10,d.pm_unit,d.index,new Date(d.received_at).toISOString()].map(csvValue).join(','))].join('\n');
+      download(data,'grand_parade_raw_pm_measurements.csv','text/csv;charset=utf-8');
+    }
+    $('rawCsvBtn').addEventListener('click',downloadRawCSV);
+    $('rawClearBtn').addEventListener('click',()=>{rawLog.length=0;rawMeasurements.clear();rawCount=0;renderRawConsole();});
+    setInterval(()=>{if(rawMeasurements.size)renderRawConsole();},5000);
+   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.6 / API INPUT':'v0.6 / SIMULATED';}
+   function disconnectLive(){if(liveStream){liveStream.close();liveStream=null;}liveConnected=false;liveReadings.clear();rawMeasurements.clear();rawLog.length=0;rawCount=0;renderRawConsole();setSourceStatus('Simulation / no API connected');$('status').textContent=active?'PLAYING · simulated data':'READY / SIMULATED INPUT';}
    function connectLive(){
      const base=$('receiverUrl').value.trim().replace(/\/+$/,'');
      if(!/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(base)){setSourceStatus('Enter an HTTPS origin, without a path');return;}
@@ -454,12 +497,14 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
      stream.onopen=()=>{if(liveStream!==stream)return;setSourceStatus('Connected / waiting for CALM readings');$('status').textContent=active?'PLAYING · API STREAM':'API CONNECTED';};
      stream.onmessage=e=>{if(liveStream!==stream)return;let d;try{d=JSON.parse(e.data);}catch{return;}
        if(!d||!/^CALM-(0[1-9]|10)$/.test(d.device_id)||typeof d.index!=='number'||!Number.isFinite(d.index)||d.index<0||d.index>1)return;
-       liveReadings.set(d.device_id,{index:d.index,timestamp:d.timestamp});setSourceStatus('Receiving / '+liveReadings.size+' of 10 devices');};
+       liveReadings.set(d.device_id,{index:d.index,timestamp:d.timestamp});
+       if(d.pm&&typeof d.pm==='object'){const pm={};for(const key of ['pm1','pm2_5','pm10'])if(typeof d.pm[key]==='number'&&Number.isFinite(d.pm[key]))pm[key]=d.pm[key];if(Object.keys(pm).length){const packet={device_id:d.device_id,timestamp:d.timestamp||'',pm,pm_unit:d.pm_unit||'ug/m3',index:d.index,received_at:Date.now()};rawMeasurements.set(d.device_id,packet);rawLog.push(packet);rawCount++;if(rawLog.length>5000)rawLog.splice(0,1000);}}
+       renderRawConsole();setSourceStatus('Receiving / '+liveReadings.size+' of 10 devices');};
      stream.onerror=()=>{if(liveStream===stream)setSourceStatus('Connection interrupted / retrying automatically');};
    }
    $('connectBtn').addEventListener('click',connectLive);
    $('disconnectBtn').addEventListener('click',disconnectLive);
-   buildTracks();featureUpdate();decideRelation();updateStats();dataTimer=setInterval(featureUpdate,SAMPLE_PERIOD);paintTimer=requestAnimationFrame(loopPaint);
+   buildTracks();renderRawConsole();featureUpdate();decideRelation();updateStats();dataTimer=setInterval(featureUpdate,SAMPLE_PERIOD);paintTimer=requestAnimationFrame(loopPaint);
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)$('status').textContent='BACKGROUND · mobile audio may pause';else if(active)$('status').textContent=liveConnected?'PLAYING · API STREAM':'PLAYING · simulated data';});
   window.addEventListener('pagehide',()=>{if(audioTimer)clearInterval(audioTimer);if(dataTimer)clearInterval(dataTimer);if(paintTimer)cancelAnimationFrame(paintTimer);if(ctx)ctx.close().catch(()=>{});});
 })();
