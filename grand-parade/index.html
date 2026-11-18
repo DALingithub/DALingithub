@@ -127,7 +127,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 
 </head>
 <body>
-<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version">v0.4 &nbsp; / &nbsp; SIMULATED</span></div></header>
+<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.5 &nbsp; / &nbsp; SIMULATED</span></div></header>
 <main class="container">
   <nav class="toolbar" aria-label="Transport">
     <button class="btn primary" id="playBtn">START</button>
@@ -150,13 +150,13 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
         <div class="panel-title"><h2>01 / signal routing</h2><span class="mini-label">10 inputs → 1 score → audio</span></div>
         <div class="patch-area">
           <div class="patch-chain">
-            <div class="patch-node"><span>inlet / data</span><strong>CALM × 10</strong><small>index [0, 1] · simulated</small></div>
+            <div class="patch-node"><span>inlet / data</span><strong>CALM × 10</strong><small>index [0, 1] · live or simulated</small></div>
             <div class="patch-wire" aria-hidden="true"></div>
             <div class="patch-node wide"><span id="relationState">AUTO / LISTENING</span><strong id="relationName">echo</strong><small id="relationPair">—</small></div>
             <div class="patch-wire" aria-hidden="true"></div>
             <div class="patch-node"><span>outlet / audio</span><strong>WEB AUDIO</strong><small>10 synth voices</small></div>
           </div>
-          <div class="patch-notes"><span id="relationExplanation">cross-family / call and response</span><span class="patch-note-state">NO LIVE CALM INPUT</span></div>
+          <div class="patch-notes"><span id="relationExplanation">cross-family / call and response</span><span class="patch-note-state" id="patchDataState">SIMULATED DATA</span></div>
         </div>
       </section>
       <section class="panel">
@@ -199,6 +199,16 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
         </div>
       </section>
       <section class="side-section">
+        <div class="side-section-title"><h2>live input</h2><span class="mini-label">[receiver API / SSE]</span></div>
+        <div class="controls">
+          <div class="field"><div class="labelrow"><label for="receiverUrl">receiver base URL</label></div>
+            <input id="receiverUrl" type="url" placeholder="https://YOUR-SERVICE.onrender.com" style="width:100%;max-width:100%;font-size:11px;padding:8px 6px;border:1px solid var(--line);background:#fff;color:var(--ink);">
+          </div>
+          <div class="row-buttons"><button class="btn" id="connectBtn">CONNECT</button><button class="btn" id="disconnectBtn">SIMULATE</button></div>
+          <small id="receiverStatus" style="color:var(--grey)">Simulation / no API connected</small>
+        </div>
+      </section>
+      <section class="side-section">
         <div class="side-section-title"><h2>mapping</h2><span class="mini-label">[data → sound]</span></div>
         <div class="mapping">
           <div class="mapping-row"><span>level</span><strong>filter / FM</strong></div>
@@ -209,7 +219,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       </section>
     </aside>
   </div>
-  <footer class="foot"><p>SIMULATION ONLY &nbsp; / &nbsp; NOT BLACK-CARBON CONCENTRATION &nbsp; / &nbsp; RULE-BASED AUDIO</p><span class="flag">OFFLINE · SINGLE FILE</span></footer>
+  <footer class="foot"><p>NORMALIZED INDEX [0–1] &nbsp; / &nbsp; NOT BLACK-CARBON CONCENTRATION &nbsp; / &nbsp; RULE-BASED AUDIO</p><span class="flag">OFFLINE · SINGLE FILE</span></footer>
 </main>
 <script>
 (()=>{'use strict';
@@ -227,7 +237,8 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     ['Ghost Call','Cornet','METAL','ghost',72,.42,'#3f3f3f']
   ];
   const tracks=CONFIG.map((r,i)=>({id:'CALM-'+String(i+1).padStart(2,'0'),i,name:r[0],analog:r[1],group:r[2],type:r[3],base:r[4],pan:r[5],color:r[6],history:[],smooth:.37,raw:.37,trend:0,volatility:0,muted:false,lastData:0,bus:null}));
-  let scenario='city',movement=0,bpm=68,influence=.75,density=.55,volume=.55,seed=2026,simTick=0,simTime=0,active=false,step=0,bar=0,solo=null,invited=null,manualOn=false,selected=0;
+  let liveStream=null,liveConnected=false,liveReadings=new Map(),liveUrl='';
+   let scenario='city',movement=0,bpm=68,influence=.75,density=.55,volume=.55,seed=2026,simTick=0,simTime=0,active=false,step=0,bar=0,solo=null,invited=null,manualOn=false,selected=0;
   let relationChoice='auto',relationWeight=.80,relation={mode:'echo',caller:0,responder:5,outsider:null,reason:'Awaiting first phrase'},lastCallDegree=2;
   const conductorDecisions=[];
   let ctx=null,master=null,compressor=null,recDest=null,feedback=null,wet=null,delay=null,noise=null,audioTimer=null,dataTimer=null,paintTimer=null,nextStep=0,mediaRecorder=null,recording=false,chunks=[];
@@ -248,10 +259,11 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     simTick++;simTime=simTick*SAMPLE_PERIOD/1000;
     const ts=new Date().toISOString();
     tracks.forEach(v=>{
-      const raw=(manualOn&&v.i===selected)? Number($('manual').value)/100 : synthetic(v.i,simTime);
+      const packet=liveConnected?liveReadings.get(v.id):null;
+       const raw=(manualOn&&v.i===selected)? Number($('manual').value)/100 : (liveConnected?(packet?packet.index:v.raw):synthetic(v.i,simTime));
       const previous=v.smooth;v.raw=raw;v.smooth=previous*.62+raw*.38;v.trend=v.smooth-previous;
       v.history.push(v.smooth);if(v.history.length>75)v.history.shift();v.volatility=std(v.history.slice(-10));v.lastData=simTime;
-      samples.push({time_s:simTime.toFixed(2),device_id:v.id,virtual_instrument:v.name,index:v.smooth.toFixed(5),quality:'simulated',source:(manualOn&&v.i===selected)?'manual_test':'math_simulation',timestamp_utc:ts});
+      samples.push({time_s:simTime.toFixed(2),device_id:v.id,virtual_instrument:v.name,index:v.smooth.toFixed(5),quality:liveConnected?(packet?'received':'unreceived'):'simulated',source:(manualOn&&v.i===selected)?'manual_test':(liveConnected?(packet?'external_api':'not_received'):'math_simulation'),timestamp_utc:ts});
     });
     if(samples.length>110000)samples.splice(0,20000);
     renderTracks();updateStats();
@@ -323,7 +335,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       mode==='space'?`CALM-${String((outsider??0)+1).padStart(2,'0')} / solo`:
       `cross-family / call and response`};
     invited=mode==='space'?relation.caller:null;
-    conductorDecisions.push({bar:bar+1,mode,device_a:tracks[relation.caller].id,device_b:tracks[relation.responder].id,spread:+all.spread.toFixed(4),median:+m.toFixed(4),reason:relation.reason,source:'simulated'});
+    conductorDecisions.push({bar:bar+1,mode,device_a:tracks[relation.caller].id,device_b:tracks[relation.responder].id,spread:+all.spread.toFixed(4),median:+m.toFixed(4),reason:relation.reason,source:liveConnected?'external_api':'simulated'});
     if(conductorDecisions.length>10000)conductorDecisions.splice(0,1000);
     const el=$('relationName');if(el){el.textContent=MODE_LABELS[mode];$('relationState').textContent=relationChoice==='auto'?'DATA-SELECTED MODE':'MANUAL COMPOSITION MODE';$('relationExplanation').textContent=relation.reason;
       $('relationPair').textContent=mode==='converge'?'10 individual devices → shared pitch field':mode==='space'?`${tracks[relation.caller].id} solo · other voices make room`:
@@ -399,8 +411,8 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     if(events.length>45000)events.splice(0,7000);
   }
   function scheduler(){if(!active||!ctx)return;while(nextStep<ctx.currentTime+.17){scheduleStep(nextStep);nextStep+=60/bpm/4;}updateStats();}
-  function start(){if(active)return;try{setupAudio();ctx.resume().then(()=>{active=true;step=0;bar=0;nextStep=ctx.currentTime+.12;master.gain.cancelScheduledValues(ctx.currentTime);master.gain.setTargetAtTime(.45*volume,ctx.currentTime,.06);$('playBtn').textContent='STOP';$('status').textContent='PLAYING · fictional data';$('status').classList.add('live');audioTimer=setInterval(scheduler,25);scheduler();}).catch(e=>statusError('Audio resume failed: '+e.message));}catch(e){statusError('Audio unavailable: '+e.message)}}
-  function stop(){active=false;if(audioTimer)clearInterval(audioTimer);audioTimer=null;if(master&&ctx)master.gain.setTargetAtTime(.00001,ctx.currentTime,.045);$('playBtn').textContent='START';$('status').textContent='STOPPED · simulation continues';$('status').classList.remove('live');if(recording)toggleRecord();}
+  function start(){if(active)return;try{setupAudio();ctx.resume().then(()=>{active=true;step=0;bar=0;nextStep=ctx.currentTime+.12;master.gain.cancelScheduledValues(ctx.currentTime);master.gain.setTargetAtTime(.45*volume,ctx.currentTime,.06);$('playBtn').textContent='STOP';$('status').textContent=liveConnected?'PLAYING · API STREAM':'PLAYING · simulated data';$('status').classList.add('live');audioTimer=setInterval(scheduler,25);scheduler();}).catch(e=>statusError('Audio resume failed: '+e.message));}catch(e){statusError('Audio unavailable: '+e.message)}}
+  function stop(){active=false;if(audioTimer)clearInterval(audioTimer);audioTimer=null;if(master&&ctx)master.gain.setTargetAtTime(.00001,ctx.currentTime,.045);$('playBtn').textContent='START';$('status').textContent=liveConnected?'STOPPED · API STREAM':'STOPPED · simulation continues';$('status').classList.remove('live');if(recording)toggleRecord();}
   function statusError(s){$('status').textContent=s;$('status').classList.remove('live')}
   function renderTracks(){tracks.forEach(v=>{const e=$('v'+v.i);if(!e)return;e.querySelector('.val').textContent=v.smooth.toFixed(2);const h=v.history.slice(-32);const p=h.length>1?h.map((x,i)=>[3+i*(194/(h.length-1)),25-x*22].join(',')).join(' '):'';e.querySelector('polyline').setAttribute('points',p);e.classList.toggle('soloed',solo===v.i);e.classList.toggle('muted',v.muted);e.querySelector('.mutebtn').classList.toggle('on',v.muted);e.querySelector('.mutebtn').setAttribute('aria-pressed',v.muted?'true':'false');e.querySelector('.solobtn').classList.toggle('on',solo===v.i);e.querySelector('.solobtn').setAttribute('aria-pressed',solo===v.i?'true':'false');});}
   function updateStats(){const s=conductorSnapshot();$('medianV').textContent=s.median.toFixed(2);$('spreadV').textContent=s.spread.toFixed(2);$('activeV').innerHTML=tracks.filter(v=>!v.muted&&(solo===null||solo===v.i)).length+' <span style="font-size:14px;color:var(--soft)">/ 10</span>';$('soloV').textContent=invited===null?'—':String(invited+1).padStart(2,'0');$('movementV').textContent=['Assembly','Procession','Dispersal'][movement];$('barV').textContent=`Bar ${bar+1} · step ${step+1}`;}
@@ -420,7 +432,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     if(!active||!ctx){statusError('Start playback before recording');return;}if(!window.MediaRecorder){statusError('MediaRecorder unavailable in this browser');return;}
     try{const types=['audio/webm;codecs=opus','audio/mp4','audio/webm'];const preferred=types.find(t=>MediaRecorder.isTypeSupported(t));mediaRecorder=new MediaRecorder(recDest.stream,preferred?{mimeType:preferred}:{});chunks=[];mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data)};mediaRecorder.onerror=e=>statusError('Recording error: '+(e.error?.message||'unknown'));mediaRecorder.onstop=()=>{if(!chunks.length){statusError('No audio recorded');return;}const ext=(mediaRecorder.mimeType||'').includes('mp4')?'m4a':'webm';const blob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='grand_parade_electronic_orchestra_v03.'+ext;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},2000);};mediaRecorder.start(250);recording=true;$('recordBtn').textContent='STOP REC';$('recordBtn').classList.add('recording');}catch(e){statusError('Cannot record: '+e.message)}
   }
-  function reset(){simTick=0;simTime=0;bar=0;step=0;invited=null;setOverride(false);samples.length=0;events.length=0;conductorDecisions.length=0;tracks.forEach(v=>{v.history.length=0;v.raw=.37;v.smooth=.37;v.volatility=0;v.trend=0;});featureUpdate();if(active&&ctx)nextStep=ctx.currentTime+.15;$('status').textContent=active?'PLAYING · simulation reset':'RESET · fictional streams restarted';$('status').classList.toggle('live',active);}
+  function reset(){simTick=0;simTime=0;bar=0;step=0;invited=null;setOverride(false);samples.length=0;events.length=0;conductorDecisions.length=0;tracks.forEach(v=>{v.history.length=0;v.raw=.37;v.smooth=.37;v.volatility=0;v.trend=0;});featureUpdate();if(active&&ctx)nextStep=ctx.currentTime+.15;$('status').textContent=active?(liveConnected?'PLAYING · API STREAM':'PLAYING · simulation reset'):(liveConnected?'RESET · API STREAM':'RESET · simulated data');$('status').classList.toggle('live',active);}
   $('playBtn').addEventListener('click',()=>active?stop():start());$('recordBtn').addEventListener('click',toggleRecord);$('csvBtn').addEventListener('click',csv);$('eventsBtn').addEventListener('click',scoreJson);$('resetBtn').addEventListener('click',reset);
   $('scenario').addEventListener('change',e=>{scenario=e.target.value;reset();});
   document.querySelectorAll('.pill').forEach(el=>el.addEventListener('click',()=>{movement=Number(el.dataset.movement);document.querySelectorAll('.pill').forEach(b=>b.classList.toggle('selected',b===el));updateStats();}));
@@ -431,8 +443,24 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   $('overrideBtn').addEventListener('click',()=>setOverride(!manualOn));$('clearOverrideBtn').addEventListener('click',()=>setOverride(false));
   $('relationMode').addEventListener('change',e=>{relationChoice=e.target.value;decideRelation();});
   $('relationWeight').addEventListener('input',e=>{relationWeight=Number(e.target.value)/100;$('relationWeightN').textContent=e.target.value+'%';});
-  buildTracks();featureUpdate();decideRelation();updateStats();dataTimer=setInterval(featureUpdate,SAMPLE_PERIOD);paintTimer=requestAnimationFrame(loopPaint);
-  document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)$('status').textContent='BACKGROUND · mobile audio may pause';else if(active)$('status').textContent='PLAYING · fictional data';});
+  function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.5 / API INPUT':'v0.5 / SIMULATED';}
+   function disconnectLive(){if(liveStream){liveStream.close();liveStream=null;}liveConnected=false;liveReadings.clear();setSourceStatus('Simulation / no API connected');$('status').textContent=active?'PLAYING · simulated data':'READY / SIMULATED INPUT';}
+   function connectLive(){
+     const base=$('receiverUrl').value.trim().replace(/\/+$/,'');
+     if(!/^https:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(base)){setSourceStatus('Enter an HTTPS origin, without a path');return;}
+     disconnectLive();liveUrl=base;liveConnected=true;
+     const stream=new EventSource(base+'/api/stream');liveStream=stream;
+     setSourceStatus('Connecting / waiting for live readings…');
+     stream.onopen=()=>{if(liveStream!==stream)return;setSourceStatus('Connected / waiting for CALM readings');$('status').textContent=active?'PLAYING · API STREAM':'API CONNECTED';};
+     stream.onmessage=e=>{if(liveStream!==stream)return;let d;try{d=JSON.parse(e.data);}catch{return;}
+       if(!d||!/^CALM-(0[1-9]|10)$/.test(d.device_id)||typeof d.index!=='number'||!Number.isFinite(d.index)||d.index<0||d.index>1)return;
+       liveReadings.set(d.device_id,{index:d.index,timestamp:d.timestamp});setSourceStatus('Receiving / '+liveReadings.size+' of 10 devices');};
+     stream.onerror=()=>{if(liveStream===stream)setSourceStatus('Connection interrupted / retrying automatically');};
+   }
+   $('connectBtn').addEventListener('click',connectLive);
+   $('disconnectBtn').addEventListener('click',disconnectLive);
+   buildTracks();featureUpdate();decideRelation();updateStats();dataTimer=setInterval(featureUpdate,SAMPLE_PERIOD);paintTimer=requestAnimationFrame(loopPaint);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden&&active)$('status').textContent='BACKGROUND · mobile audio may pause';else if(active)$('status').textContent=liveConnected?'PLAYING · API STREAM':'PLAYING · simulated data';});
   window.addEventListener('pagehide',()=>{if(audioTimer)clearInterval(audioTimer);if(dataTimer)clearInterval(dataTimer);if(paintTimer)cancelAnimationFrame(paintTimer);if(ctx)ctx.close().catch(()=>{});});
 })();
 </script>
