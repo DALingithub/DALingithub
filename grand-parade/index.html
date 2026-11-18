@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>The Grand Parade / Audio Patch v0.7.1 — Air Column Sound</title>
+<title>The Grand Parade / Audio Patch v0.7.2 — Speaker Air Column</title>
 <style>
 
 :root {
@@ -139,7 +139,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 
 </head>
 <body>
-<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.7.1 &nbsp; / &nbsp; SIMULATED</span></div></header>
+<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.7.2 &nbsp; / &nbsp; SIMULATED</span></div></header>
 <main class="container">
   <nav class="toolbar" aria-label="Transport">
     <button class="btn primary" id="playBtn">START</button>
@@ -179,7 +179,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       </section>
       <section class="panel">
         <div class="panel-title"><h2>03 / voices</h2><span class="mini-label">M mute / S solo</span></div>
-        <div class="feature-guide">ABS / timbre &nbsp; · &nbsp; Δ / rhythmic change &nbsp; · &nbsp; GROUP / interaction</div>
+        <div class="feature-guide">ABS / timbre &nbsp; · &nbsp; Δ / rhythmic change &nbsp; · &nbsp; GROUP / interaction · 01: PM pitch + pulses</div>
         <div class="tracks" id="tracks"></div>
       </section>
       <section class="panel" aria-label="Raw measurement console">
@@ -262,7 +262,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     ['Ground Sub','Sousaphone','METAL','sub',38,.05,'#b1b1b1'],
     ['Ghost Call','Cornet','METAL','ghost',72,.42,'#3f3f3f']
   ];
-  const tracks=CONFIG.map((r,i)=>({id:'CALM-'+String(i+1).padStart(2,'0'),i,name:r[0],analog:r[1],group:r[2],type:r[3],base:r[4],pan:r[5],color:r[6],history:[],smooth:.37,raw:.37,trend:0,volatility:0,absolute:.37,relative:0,changeActivity:0,groupDifference:0,groupScore:.37,pmFiltered:null,pmBaseline:null,pmValue:null,lastPacket:null,pmSeenAt:0,muted:false,lastData:0,bus:null}));
+  const tracks=CONFIG.map((r,i)=>({id:'CALM-'+String(i+1).padStart(2,'0'),i,name:r[0],analog:r[1],group:r[2],type:r[3],base:r[4],pan:r[5],color:r[6],history:[],smooth:.37,raw:.37,trend:0,volatility:0,airStep:null,absolute:.37,relative:0,changeActivity:0,groupDifference:0,groupScore:.37,pmFiltered:null,pmBaseline:null,pmValue:null,lastPacket:null,pmSeenAt:0,muted:false,lastData:0,bus:null}));
   let liveStream=null,liveConnected=false,liveReadings=new Map(),liveUrl='';
   const rawMeasurements=new Map(),rawLog=[]; let rawCount=0;
    let scenario='city',movement=0,bpm=68,influence=.75,density=.55,volume=.55,seed=2026,simTick=0,simTime=0,active=false,step=0,bar=0,solo=null,invited=null,manualOn=false,selected=0;
@@ -274,6 +274,17 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
    const PM_REFERENCE=35,PM_CHANGE_GATE=.15,PM_CHANGE_SPAN=1.8,PM_GROUP_GATE=.2,PM_GROUP_SPAN=3,PM_STALE_MS=30000;
    const pmAbsolute=x=>clamp(Math.log1p(Math.max(0,x))/Math.log1p(PM_REFERENCE),0,1);
    function livePmVoices(){return tracks.filter(v=>v.pmValue!==null&&Date.now()-v.pmSeenAt<PM_STALE_MS&&!v.muted)}
+   // Artistic pitch banding for Air Column only; not an air-quality scale.
+   const AIR_PM_THRESHOLDS=[1.1,1.6,2.15,2.7,4.5,7.5,12],AIR_NOTES=[69,72,74,77,79,81,84,86],AIR_NAMES=['A4','C5','D5','F5','G5','A5','C6','D6'],AIR_HYSTERESIS=.12;
+   function updateAirStage(v){
+      let pm=null;
+      if(manualOn&&selected===0)pm=Math.expm1(clamp(v.absolute,0,1)*Math.log1p(PM_REFERENCE));
+      else if(liveConnected&&v.pmValue!==null)pm=v.pmFiltered; // hold last note if stream goes stale
+      if(pm===null||!Number.isFinite(pm)){v.airStep=null;return;}
+      if(v.airStep===null){v.airStep=AIR_PM_THRESHOLDS.filter(t=>pm>=t).length;return;}
+      while(v.airStep<AIR_PM_THRESHOLDS.length&&pm>AIR_PM_THRESHOLDS[v.airStep]+AIR_HYSTERESIS)v.airStep++;
+      while(v.airStep>0&&pm<AIR_PM_THRESHOLDS[v.airStep-1]-AIR_HYSTERESIS)v.airStep--;
+   }
 
   const rand=(n)=>{let x=(n|0)^0x9e3779b9;x=Math.imul(x^(x>>>16),0x21f0aaad);x=Math.imul(x^(x>>>15),0x735a2d97);return ((x^(x>>>15))>>>0)/4294967296};
   const med=v=>{const a=[...v].sort((a,b)=>a-b),n=a.length;return n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2};
@@ -319,6 +330,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       v.history.push(v.smooth);if(v.history.length>75)v.history.shift();
       v.volatility=liveConnected&&hasPm?v.changeActivity*.12:std(v.history.slice(-10));
       v.lastData=simTime;
+      if(v.i===0)updateAirStage(v);
     });
     const activePm=liveConnected?livePmVoices():[];
     if(activePm.length>=2){
@@ -361,27 +373,22 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     const f=hz(midi),base=Math.max(.015,Math.min(.13,strength)),release=.22;
     switch(v.type){
       case 'air':{
-       // Voice 01: preserve a clear flute-like core while PM controls audible breath / harmonics.
-       // Intentionally sensitive in the 0–3 µg/m³ range; not a pollution severity score.
-       const texture=clamp((v.absolute-.10)/.38,0,1);
-       const airMix=clamp(.32+influence*(texture-.32),.03,.97);
-       const core=envNode(v.bus,when,dur+.22,base*(.63-.10*airMix),.11,.54);
-       oscillator(core,f,when,dur+.40,'sine');
-       // Higher partials rise roughly threefold between PM2.5 0.8 and 3 at default settings.
-       const sheen=envNode(v.bus,when,dur+.18,base*(.025+.72*airMix),.085,.42);
-       oscillator(sheen,f*2,when,dur+.40,'sine',{detune:3});
-       oscillator(sheen,f*3,when,dur+.40,'sine',{detune:-5});
-       // Broad, filtered, gently enveloped airflow becomes more present and brighter.
+       // Midrange fundamental and second harmonic survive normal PA / speaker playback.
+       const texture=clamp((v.absolute-.10)/.38,0,1),airMix=clamp(.32+influence*(texture-.32),.03,.97);
+       const core=envNode(v.bus,when,dur+.1,base*.94,.055,.33);
+       oscillator(core,f,when,dur+.18,'sine');
+       const harmonics=envNode(v.bus,when,dur+.04,base*(.23+.18*airMix),.055,.29);
+       oscillator(harmonics,f*2,when,dur+.12,'triangle',{detune:3});
        const filter=ctx.createBiquadFilter();filter.type='bandpass';
-       filter.frequency.value=650+airMix*3800;filter.Q.value=.48;
-       const breathEnv=envNode(v.bus,when,dur+.12,base*(.12+2.15*airMix),.095,.44);
+       filter.frequency.value=850+airMix*2350;filter.Q.value=.6;
+       const airy=envNode(v.bus,when,dur+.08,base*(.12+.34*airMix),.09,.31);
        const hiss=ctx.createBufferSource();hiss.buffer=noise;hiss.loop=true;
-       hiss.connect(filter);filter.connect(breathEnv);
+       hiss.connect(filter);filter.connect(airy);
        hiss.start(when,rand(Math.round(when*1000)+v.i*59)*2);
-       hiss.stop(when+dur+.62);
+       hiss.stop(when+dur+.5);
        break;
      }
-      case 'fm':{const e=envNode(v.bus,when,dur,base*.75,.009,.25),carrier=ctx.createOscillator(),mod=ctx.createOscillator(),mg=ctx.createGain();carrier.type='sine';carrier.frequency.value=f;mod.frequency.value=f*(1.5+Math.round(colour*3)*.5);mg.gain.setValueAtTime(f*(.15+colour*1.5),when);mg.gain.exponentialRampToValueAtTime(Math.max(8,f*.035),when+dur+.12);mod.connect(mg);mg.connect(carrier.frequency);carrier.connect(e);mod.start(when);carrier.start(when);mod.stop(when+dur+.38);carrier.stop(when+dur+.38);break;}
+     case 'fm':{const e=envNode(v.bus,when,dur,base*.75,.009,.25),carrier=ctx.createOscillator(),mod=ctx.createOscillator(),mg=ctx.createGain();carrier.type='sine';carrier.frequency.value=f;mod.frequency.value=f*(1.5+Math.round(colour*3)*.5);mg.gain.setValueAtTime(f*(.15+colour*1.5),when);mg.gain.exponentialRampToValueAtTime(Math.max(8,f*.035),when+dur+.12);mod.connect(mg);mg.connect(carrier.frequency);carrier.connect(e);mod.start(when);carrier.start(when);mod.stop(when+dur+.38);carrier.stop(when+dur+.38);break;}
       case 'hollow':{const filter=ctx.createBiquadFilter();filter.type='bandpass';filter.frequency.setValueAtTime(550+colour*1300,when);filter.Q.value=2+colour*5;const e=envNode(v.bus,when,dur,base*.82,.10,.36);filter.connect(e);oscillator(filter,f,when,dur+.35,'sawtooth');oscillator(e,f*.5,when,dur+.35,'sine');break;}
       case 'grains':{const count=3+Math.round(volatility*17*influence);for(let j=0;j<count;j++){const off=dur*(j/(count+1));noiseBurst(v.bus,when+off,.035+rand(j*71+bar)*.11,base*.13,420+f*2+colour*4200,1.4+colour*3);}break;}
       case 'valve':{const e=envNode(v.bus,when,dur,base*.95,.012,.17);oscillator(e,f,when,dur+.14,'triangle',{to:f*(.97-trend*.04)});noiseBurst(v.bus,when,Math.min(dur,.09),base*.17,230+colour*1300,.7);break;}
@@ -494,14 +501,22 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       if(movement===2&&v.i%3===1&&s!==0)hit=hit&&r<.35;
       const roleResult=relationalArticulation(v,s,b,hit,degree,dur,weight,r);
       ({hit,degree,dur,weight}=roleResult);
+      const airPMActive=v.i===0&&v.type==='air'&&v.airStep!==null;
+      if(airPMActive){
+        // Steady, audible phrase: 2 / 3 / 4 attacks per bar as PM rises.
+        const pattern=v.airStep>=4?[0,4,8,12]:v.airStep>=2?[0,8,12]:[0,8];
+        hit=pattern.includes(s);
+        dur=beat*(v.airStep>=4?.55:v.airStep>=2?.9:1.52);
+        weight=.87;roleResult.role='pm-motif';
+      }
       if(hit){
-        let midi=nearestMelody(v,root,degree);if(shared.spread>.24&&influence>.25&&r2<.27*influence)midi+=1; // additional semitone colour from group divergence
+        let midi=airPMActive?AIR_NOTES[v.airStep]:nearestMelody(v,root,degree);if(!airPMActive&&shared.spread>.24&&influence>.25&&r2<.27*influence)midi+=1; // additional semitone colour from group divergence
         if(v.type==='sub')midi-=12;
         if(relationWeight>0&&relation.mode==='friction'&&roleResult.role==='counter'&&v.i===relation.responder)midi+=1;
-        const nudge=(v.trend>0?.045:-.045)*influence;
+        const nudge=airPMActive?0:(v.trend>0?.045:-.045)*influence;
         const amp=clamp(weight*(.75+groupActivity*.22)*(1+influence*delta*.33)*accent,.1,1.3);
         synth(v,midi+nudge,when,dur,amp*.072,colour,v.trend,v.changeActivity*.12);
-        events.push({audio_time_s:+when.toFixed(3),bar:b+1,step:s+1,device_id:v.id,instrument:v.name,note_midi:+midi.toFixed(2),duration_s:+dur.toFixed(3),strength:+amp.toFixed(3),music_index:+v.smooth.toFixed(4),relative_change:+v.relative.toFixed(4),group_difference:+v.groupDifference.toFixed(4),movement:['Assembly','Procession','Dispersal'][movement],relation_mode:relation.mode,relation_role:roleResult.role,relation_pair:`${tracks[relation.caller].id}/${tracks[relation.responder].id}`,relation_weight:relationWeight,solo_invited:invited===v.i,kind:roleResult.role==='solo'?'solo':(['call','response','counter','unison'].includes(roleResult.role)?'group':'note')});
+        events.push({audio_time_s:+when.toFixed(3),bar:b+1,step:s+1,device_id:v.id,instrument:v.name,note_midi:+midi.toFixed(2),duration_s:+dur.toFixed(3),strength:+amp.toFixed(3),music_index:+v.smooth.toFixed(4),air_note:airPMActive?AIR_NAMES[v.airStep]:'',relative_change:+v.relative.toFixed(4),group_difference:+v.groupDifference.toFixed(4),movement:['Assembly','Procession','Dispersal'][movement],relation_mode:relation.mode,relation_role:roleResult.role,relation_pair:`${tracks[relation.caller].id}/${tracks[relation.responder].id}`,relation_weight:relationWeight,solo_invited:invited===v.i,kind:roleResult.role==='solo'?'solo':(['call','response','counter','unison'].includes(roleResult.role)?'group':'note')});
       }
     }
     step++;if(step>=16){step=0;bar++;}
@@ -512,7 +527,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   function stop(){active=false;if(audioTimer)clearInterval(audioTimer);audioTimer=null;if(master&&ctx)master.gain.setTargetAtTime(.00001,ctx.currentTime,.045);$('playBtn').textContent='START';$('status').textContent=liveConnected?'STOPPED · API STREAM':'STOPPED · simulation continues';$('status').classList.remove('live');if(recording)toggleRecord();}
   function statusError(s){$('status').textContent=s;$('status').classList.remove('live')}
   function renderTracks(){tracks.forEach(v=>{const e=$('v'+v.i);if(!e)return;e.querySelector('.val').textContent=v.smooth.toFixed(2);
-    const feat=e.querySelector('.track-features');if(feat)feat.textContent='ABS '+v.absolute.toFixed(2)+'   Δ '+(v.relative>=0?'+':'')+v.relative.toFixed(2)+'   GROUP '+(v.groupDifference>=0?'+':'')+v.groupDifference.toFixed(2);const h=v.history.slice(-32);const p=h.length>1?h.map((x,i)=>[3+i*(194/(h.length-1)),25-x*22].join(',')).join(' '):'';e.querySelector('polyline').setAttribute('points',p);e.classList.toggle('soloed',solo===v.i);e.classList.toggle('muted',v.muted);e.querySelector('.mutebtn').classList.toggle('on',v.muted);e.querySelector('.mutebtn').setAttribute('aria-pressed',v.muted?'true':'false');e.querySelector('.solobtn').classList.toggle('on',solo===v.i);e.querySelector('.solobtn').setAttribute('aria-pressed',solo===v.i?'true':'false');});}
+    const feat=e.querySelector('.track-features');if(feat)feat.textContent='ABS '+v.absolute.toFixed(2)+'   Δ '+(v.relative>=0?'+':'')+v.relative.toFixed(2)+'   GROUP '+(v.groupDifference>=0?'+':'')+v.groupDifference.toFixed(2)+(v.i===0&&v.airStep!==null?'  NOTE '+AIR_NAMES[v.airStep]+' / '+(v.airStep>=4?'4':v.airStep>=2?'3':'2')+' PULSES':'');const h=v.history.slice(-32);const p=h.length>1?h.map((x,i)=>[3+i*(194/(h.length-1)),25-x*22].join(',')).join(' '):'';e.querySelector('polyline').setAttribute('points',p);e.classList.toggle('soloed',solo===v.i);e.classList.toggle('muted',v.muted);e.querySelector('.mutebtn').classList.toggle('on',v.muted);e.querySelector('.mutebtn').setAttribute('aria-pressed',v.muted?'true':'false');e.querySelector('.solobtn').classList.toggle('on',solo===v.i);e.querySelector('.solobtn').setAttribute('aria-pressed',solo===v.i?'true':'false');});}
   function updateStats(){const s=conductorSnapshot();$('medianV').textContent=s.median.toFixed(2);$('spreadV').textContent=s.spread.toFixed(2);$('activeV').innerHTML=tracks.filter(v=>!v.muted&&(solo===null||solo===v.i)).length+' <span style="font-size:14px;color:var(--soft)">/ 10</span>';$('soloV').textContent=invited===null?'—':String(invited+1).padStart(2,'0');$('movementV').textContent=['Assembly','Procession','Dispersal'][movement];$('barV').textContent=`Bar ${bar+1} · step ${step+1}`;}
   function buildTracks(){const box=$('tracks');box.innerHTML='';tracks.forEach(v=>{const d=document.createElement('div');d.className='track';d.id='v'+v.i;d.innerHTML=`<div class="track-top"><span class="id">${String(v.i+1).padStart(2,'0')}</span><span class="orb" style="background:${v.color}"></span><span class="name">${v.name}</span><div class="track-actions"><button class="mini mutebtn" title="Mute ${v.name}" aria-label="Mute ${v.name}" aria-pressed="false">M</button><button class="mini solobtn" title="Solo ${v.name}" aria-label="Solo ${v.name}" aria-pressed="false">S</button></div></div><div class="track-sub"><span>${v.analog} → ${v.type}</span><span class="val">0.00</span></div><div class="track-features">ABS —   Δ —   GROUP —</div><svg viewBox="0 0 200 28" preserveAspectRatio="none" aria-hidden="true"><line class="baseline" x1="2" y1="18" x2="198" y2="18"/><polyline stroke="${v.color}" points=""/></svg>`;d.querySelector('.mutebtn').addEventListener('click',()=>{v.muted=!v.muted;updateVoiceGains();renderTracks();updateStats();});d.querySelector('.solobtn').addEventListener('click',()=>{solo=solo===v.i?null:v.i;updateVoiceGains();renderTracks();updateStats();});box.appendChild(d)});}
   const canvas=$('scoreCanvas'),g=canvas.getContext('2d');
@@ -530,7 +545,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     if(!active||!ctx){statusError('Start playback before recording');return;}if(!window.MediaRecorder){statusError('MediaRecorder unavailable in this browser');return;}
     try{const types=['audio/webm;codecs=opus','audio/mp4','audio/webm'];const preferred=types.find(t=>MediaRecorder.isTypeSupported(t));mediaRecorder=new MediaRecorder(recDest.stream,preferred?{mimeType:preferred}:{});chunks=[];mediaRecorder.ondataavailable=e=>{if(e.data&&e.data.size>0)chunks.push(e.data)};mediaRecorder.onerror=e=>statusError('Recording error: '+(e.error?.message||'unknown'));mediaRecorder.onstop=()=>{if(!chunks.length){statusError('No audio recorded');return;}const ext=(mediaRecorder.mimeType||'').includes('mp4')?'m4a':'webm';const blob=new Blob(chunks,{type:mediaRecorder.mimeType||'audio/webm'}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download='grand_parade_electronic_orchestra_v03.'+ext;document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(u);a.remove()},2000);};mediaRecorder.start(250);recording=true;$('recordBtn').textContent='STOP REC';$('recordBtn').classList.add('recording');}catch(e){statusError('Cannot record: '+e.message)}
   }
-  function reset(){simTick=0;simTime=0;bar=0;step=0;invited=null;setOverride(false);samples.length=0;events.length=0;conductorDecisions.length=0;tracks.forEach(v=>{v.history.length=0;v.raw=.37;v.smooth=.37;v.volatility=0;v.trend=0;v.absolute=.37;v.relative=0;v.changeActivity=0;v.groupDifference=0;v.groupScore=.37;v.pmValue=null;v.pmFiltered=null;v.pmBaseline=null;v.lastPacket=null;v.pmSeenAt=0;});featureUpdate();if(active&&ctx)nextStep=ctx.currentTime+.15;$('status').textContent=active?(liveConnected?'PLAYING · API STREAM':'PLAYING · simulation reset'):(liveConnected?'RESET · API STREAM':'RESET · simulated data');$('status').classList.toggle('live',active);}
+  function reset(){simTick=0;simTime=0;bar=0;step=0;invited=null;setOverride(false);samples.length=0;events.length=0;conductorDecisions.length=0;tracks.forEach(v=>{v.history.length=0;v.raw=.37;v.smooth=.37;v.volatility=0;v.trend=0;v.airStep=null;v.absolute=.37;v.relative=0;v.changeActivity=0;v.groupDifference=0;v.groupScore=.37;v.pmValue=null;v.pmFiltered=null;v.pmBaseline=null;v.lastPacket=null;v.pmSeenAt=0;});featureUpdate();if(active&&ctx)nextStep=ctx.currentTime+.15;$('status').textContent=active?(liveConnected?'PLAYING · API STREAM':'PLAYING · simulation reset'):(liveConnected?'RESET · API STREAM':'RESET · simulated data');$('status').classList.toggle('live',active);}
   $('playBtn').addEventListener('click',()=>active?stop():start());$('recordBtn').addEventListener('click',toggleRecord);$('csvBtn').addEventListener('click',csv);$('eventsBtn').addEventListener('click',scoreJson);$('resetBtn').addEventListener('click',reset);
   $('scenario').addEventListener('change',e=>{scenario=e.target.value;reset();});
   document.querySelectorAll('.pill').forEach(el=>el.addEventListener('click',()=>{movement=Number(el.dataset.movement);document.querySelectorAll('.pill').forEach(b=>b.classList.toggle('selected',b===el));updateStats();}));
@@ -561,7 +576,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     $('rawCsvBtn').addEventListener('click',downloadRawCSV);
     $('rawClearBtn').addEventListener('click',()=>{rawLog.length=0;rawMeasurements.clear();rawCount=0;renderRawConsole();});
     setInterval(()=>{if(rawMeasurements.size)renderRawConsole();},5000);
-   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.7.1 / API INPUT':'v0.7.1 / SIMULATED';}
+   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.7.2 / API INPUT':'v0.7.2 / SIMULATED';}
    function disconnectLive(){if(liveStream){liveStream.close();liveStream=null;}liveConnected=false;liveReadings.clear();rawMeasurements.clear();rawLog.length=0;rawCount=0;renderRawConsole();setSourceStatus('Simulation / no API connected');$('status').textContent=active?'PLAYING · simulated data':'READY / SIMULATED INPUT';}
    function connectLive(){
      const base=$('receiverUrl').value.trim().replace(/\/+$/,'');
