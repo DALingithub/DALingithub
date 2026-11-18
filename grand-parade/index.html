@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>The Grand Parade / Audio Patch v0.6 — Raw PM Console</title>
+<title>The Grand Parade / Audio Patch v0.7 — Three-Layer PM Mapping</title>
 <style>
 
 :root {
@@ -116,6 +116,9 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 .mapping-row { display:flex; justify-content:space-between; gap:8px; padding:7px 0; color:var(--grey); font-size:10px; border-bottom:1px solid var(--hair); }
 .mapping-row:last-child { border:0; }
 .mapping-row strong { font-weight:500; color:var(--ink); text-align:right; }
+.track-features{font-size:9px;color:var(--grey);padding:5px 0 1px;white-space:nowrap}
+.track-features strong{font-weight:500;color:var(--ink)}
+.feature-guide{font-size:10px;color:var(--grey);padding:10px 12px;border-bottom:1px solid var(--hair)}
 .raw-console{padding:0 11px 11px;overflow-x:auto}
 .raw-console table{width:100%;border-collapse:collapse;white-space:nowrap;font:11px/1.5 var(--mono);font-variant-numeric:tabular-nums}
 .raw-console th{font-size:10px;font-weight:500;color:var(--grey);text-align:right;padding:7px;border-bottom:1px solid var(--ink)}
@@ -136,7 +139,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 
 </head>
 <body>
-<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.6 &nbsp; / &nbsp; SIMULATED</span></div></header>
+<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.7 &nbsp; / &nbsp; SIMULATED</span></div></header>
 <main class="container">
   <nav class="toolbar" aria-label="Transport">
     <button class="btn primary" id="playBtn">START</button>
@@ -176,6 +179,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       </section>
       <section class="panel">
         <div class="panel-title"><h2>03 / voices</h2><span class="mini-label">M mute / S solo</span></div>
+        <div class="feature-guide">ABS / timbre &nbsp; · &nbsp; Δ / rhythmic change &nbsp; · &nbsp; GROUP / interaction</div>
         <div class="tracks" id="tracks"></div>
       </section>
       <section class="panel" aria-label="Raw measurement console">
@@ -233,15 +237,15 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
       <section class="side-section">
         <div class="side-section-title"><h2>mapping</h2><span class="mini-label">[data → sound]</span></div>
         <div class="mapping">
-          <div class="mapping-row"><span>level</span><strong>filter / FM</strong></div>
-          <div class="mapping-row"><span>trend</span><strong>glide</strong></div>
-          <div class="mapping-row"><span>variation</span><strong>density</strong></div>
-          <div class="mapping-row"><span>group spread</span><strong>relation</strong></div>
+          <div class="mapping-row"><span>absolute PM</span><strong>log → timbre</strong></div>
+          <div class="mapping-row"><span>relative Δ</span><strong>noise gate → rhythm / glide</strong></div>
+          <div class="mapping-row"><span>stable data</span><strong>base voice remains</strong></div>
+          <div class="mapping-row"><span>group difference</span><strong>median → interaction</strong></div>
         </div>
       </section>
     </aside>
   </div>
-  <footer class="foot"><p>NORMALIZED INDEX [0–1] &nbsp; / &nbsp; NOT BLACK-CARBON CONCENTRATION &nbsp; / &nbsp; RULE-BASED AUDIO</p><span class="flag">OFFLINE · SINGLE FILE</span></footer>
+  <footer class="foot"><p>RAW PM (µg/m³) · 3 PROVISIONAL MUSIC FEATURES · SPS30 PM IS NOT BLACK CARBON</p><span class="flag">OFFLINE · SINGLE FILE</span></footer>
 </main>
 <script>
 (()=>{'use strict';
@@ -258,7 +262,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     ['Ground Sub','Sousaphone','METAL','sub',38,.05,'#b1b1b1'],
     ['Ghost Call','Cornet','METAL','ghost',72,.42,'#3f3f3f']
   ];
-  const tracks=CONFIG.map((r,i)=>({id:'CALM-'+String(i+1).padStart(2,'0'),i,name:r[0],analog:r[1],group:r[2],type:r[3],base:r[4],pan:r[5],color:r[6],history:[],smooth:.37,raw:.37,trend:0,volatility:0,muted:false,lastData:0,bus:null}));
+  const tracks=CONFIG.map((r,i)=>({id:'CALM-'+String(i+1).padStart(2,'0'),i,name:r[0],analog:r[1],group:r[2],type:r[3],base:r[4],pan:r[5],color:r[6],history:[],smooth:.37,raw:.37,trend:0,volatility:0,absolute:.37,relative:0,changeActivity:0,groupDifference:0,groupScore:.37,pmFiltered:null,pmBaseline:null,pmValue:null,lastPacket:null,pmSeenAt:0,muted:false,lastData:0,bus:null}));
   let liveStream=null,liveConnected=false,liveReadings=new Map(),liveUrl='';
   const rawMeasurements=new Map(),rawLog=[]; let rawCount=0;
    let scenario='city',movement=0,bpm=68,influence=.75,density=.55,volume=.55,seed=2026,simTick=0,simTime=0,active=false,step=0,bar=0,solo=null,invited=null,manualOn=false,selected=0;
@@ -266,6 +270,11 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   const conductorDecisions=[];
   let ctx=null,master=null,compressor=null,recDest=null,feedback=null,wet=null,delay=null,noise=null,audioTimer=null,dataTimer=null,paintTimer=null,nextStep=0,mediaRecorder=null,recording=false,chunks=[];
   const samples=[],events=[];const SAMPLE_PERIOD=1150,MINUTES_TO_DRAW=16/60;
+   // Experimental musical parameters, not an AQI or health threshold.
+   const PM_REFERENCE=35,PM_CHANGE_GATE=.15,PM_CHANGE_SPAN=1.8,PM_GROUP_GATE=.2,PM_GROUP_SPAN=3,PM_STALE_MS=30000;
+   const pmAbsolute=x=>clamp(Math.log1p(Math.max(0,x))/Math.log1p(PM_REFERENCE),0,1);
+   function livePmVoices(){return tracks.filter(v=>v.pmValue!==null&&Date.now()-v.pmSeenAt<PM_STALE_MS&&!v.muted)}
+
   const rand=(n)=>{let x=(n|0)^0x9e3779b9;x=Math.imul(x^(x>>>16),0x21f0aaad);x=Math.imul(x^(x>>>15),0x735a2d97);return ((x^(x>>>15))>>>0)/4294967296};
   const med=v=>{const a=[...v].sort((a,b)=>a-b),n=a.length;return n%2?a[(n-1)/2]:(a[n/2-1]+a[n/2])/2};
   const quant=(v,q)=>{const a=[...v].sort((a,b)=>a-b),x=q*(a.length-1),k=Math.floor(x);return a[k]*(1-(x-k))+a[Math.min(k+1,a.length-1)]*(x-k)};
@@ -280,14 +289,51 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
   }
   function featureUpdate(){
     simTick++;simTime=simTick*SAMPLE_PERIOD/1000;
-    const ts=new Date().toISOString();
+    const ts=new Date().toISOString(),now=Date.now();
     tracks.forEach(v=>{
       const packet=liveConnected?liveReadings.get(v.id):null;
-       const raw=(manualOn&&v.i===selected)? Number($('manual').value)/100 : (liveConnected?(packet?packet.index:v.raw):synthetic(v.i,simTime));
-      const previous=v.smooth;v.raw=raw;v.smooth=previous*.62+raw*.38;v.trend=v.smooth-previous;
-      v.history.push(v.smooth);if(v.history.length>75)v.history.shift();v.volatility=std(v.history.slice(-10));v.lastData=simTime;
-      samples.push({time_s:simTime.toFixed(2),device_id:v.id,virtual_instrument:v.name,index:v.smooth.toFixed(5),quality:liveConnected?(packet?'received':'unreceived'):'simulated',source:(manualOn&&v.i===selected)?'manual_test':(liveConnected?(packet?'external_api':'not_received'):'math_simulation'),timestamp_utc:ts});
+      const manual=manualOn&&v.i===selected;
+      const pm=packet&&packet.pm;
+      const value=pm?(Number.isFinite(pm.pm2_5)?pm.pm2_5:Number.isFinite(pm.pm10)?pm.pm10:pm.pm1):null;
+      const hasPm=Number.isFinite(value)&&value>=0;
+      const freshPacket=hasPm&&packet.received_at!==v.lastPacket;
+      if(freshPacket){
+        v.lastPacket=packet.received_at;v.pmSeenAt=packet.received_at;v.pmValue=value;
+        v.pmFiltered=v.pmFiltered===null?value:v.pmFiltered*.72+value*.28;
+        v.pmBaseline=v.pmBaseline===null?v.pmFiltered:v.pmBaseline*.985+v.pmFiltered*.015;
+        const difference=v.pmFiltered-v.pmBaseline;
+        v.relative=Math.sign(difference)*clamp((Math.abs(difference)-PM_CHANGE_GATE)/PM_CHANGE_SPAN,0,1);
+        v.changeActivity=Math.abs(v.relative);
+        v.absolute=pmAbsolute(v.pmFiltered);
+      }
+      if(!liveConnected||!hasPm){
+        v.pmValue=null;v.pmSeenAt=0;v.pmFiltered=null;v.pmBaseline=null;v.lastPacket=null;v.groupDifference=0;
+        const raw=manual?Number($('manual').value)/100:liveConnected?(packet?packet.index:v.raw):synthetic(v.i,simTime);
+        const previous=v.smooth;v.raw=raw;v.smooth=previous*.62+raw*.38;v.trend=v.smooth-previous;
+        v.absolute=v.smooth;v.relative=clamp(v.trend*5,-1,1);v.changeActivity=clamp(Math.abs(v.trend)*6,0,1);v.groupScore=v.smooth;
+      }else{
+        v.raw=v.absolute;v.smooth=v.absolute;v.trend=v.relative*.015;
+        if(now-v.pmSeenAt>PM_STALE_MS){v.relative=0;v.changeActivity=0;v.trend=0;}
+        if(manual){const previous=v.smooth;v.absolute=Number($('manual').value)/100;v.smooth=v.absolute;v.trend=v.smooth-previous;}
+      }
+      v.history.push(v.smooth);if(v.history.length>75)v.history.shift();
+      v.volatility=liveConnected&&hasPm?v.changeActivity*.12:std(v.history.slice(-10));
+      v.lastData=simTime;
     });
+    const activePm=liveConnected?livePmVoices():[];
+    if(activePm.length>=2){
+      const medianPm=med(activePm.map(v=>v.pmFiltered));
+      for(const v of activePm){
+        const difference=v.pmFiltered-medianPm;
+        v.groupDifference=Math.sign(difference)*clamp((Math.abs(difference)-PM_GROUP_GATE)/PM_GROUP_SPAN,0,1);
+        v.groupScore=clamp(.5+v.groupDifference*.5,0,1);
+      }
+    }else if(activePm.length===1){activePm[0].groupDifference=0;activePm[0].groupScore=.5;}
+    for(const v of tracks){
+      const pmActive=activePm.includes(v);
+      if(liveConnected&&v.pmValue!==null&&!pmActive){v.groupDifference=0;v.groupScore=.5;v.relative=0;v.changeActivity=0;v.trend=0;}
+      samples.push({time_s:simTime.toFixed(2),device_id:v.id,virtual_instrument:v.name,index:v.smooth.toFixed(5),absolute:v.absolute.toFixed(5),relative:v.relative.toFixed(5),group_difference:v.groupDifference.toFixed(5),pm_ug_m3:v.pmValue??'',quality:liveConnected?(pmActive?'received_pm':v.pmValue!==null?'stale_pm':liveReadings.has(v.id)?'received_index':'unreceived'):'simulated',source:pmActive?'raw_pm_mapping':liveConnected?'external_api':'math_simulation',timestamp_utc:ts});
+    }
     if(samples.length>110000)samples.splice(0,20000);
     renderTracks();updateStats();
   }
@@ -486,7 +532,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     $('rawCsvBtn').addEventListener('click',downloadRawCSV);
     $('rawClearBtn').addEventListener('click',()=>{rawLog.length=0;rawMeasurements.clear();rawCount=0;renderRawConsole();});
     setInterval(()=>{if(rawMeasurements.size)renderRawConsole();},5000);
-   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.6 / API INPUT':'v0.6 / SIMULATED';}
+   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.7 / API INPUT':'v0.7 / SIMULATED';}
    function disconnectLive(){if(liveStream){liveStream.close();liveStream=null;}liveConnected=false;liveReadings.clear();rawMeasurements.clear();rawLog.length=0;rawCount=0;renderRawConsole();setSourceStatus('Simulation / no API connected');$('status').textContent=active?'PLAYING · simulated data':'READY / SIMULATED INPUT';}
    function connectLive(){
      const base=$('receiverUrl').value.trim().replace(/\/+$/,'');
@@ -497,7 +543,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
      stream.onopen=()=>{if(liveStream!==stream)return;setSourceStatus('Connected / waiting for CALM readings');$('status').textContent=active?'PLAYING · API STREAM':'API CONNECTED';};
      stream.onmessage=e=>{if(liveStream!==stream)return;let d;try{d=JSON.parse(e.data);}catch{return;}
        if(!d||!/^CALM-(0[1-9]|10)$/.test(d.device_id)||typeof d.index!=='number'||!Number.isFinite(d.index)||d.index<0||d.index>1)return;
-       liveReadings.set(d.device_id,{index:d.index,timestamp:d.timestamp});
+       liveReadings.set(d.device_id,{index:d.index,timestamp:d.timestamp,pm:d.pm||null,received_at:Date.now()});
        if(d.pm&&typeof d.pm==='object'){const pm={};for(const key of ['pm1','pm2_5','pm10'])if(typeof d.pm[key]==='number'&&Number.isFinite(d.pm[key]))pm[key]=d.pm[key];if(Object.keys(pm).length){const packet={device_id:d.device_id,timestamp:d.timestamp||'',pm,pm_unit:d.pm_unit||'ug/m3',index:d.index,received_at:Date.now()};rawMeasurements.set(d.device_id,packet);rawLog.push(packet);rawCount++;if(rawLog.length>5000)rawLog.splice(0,1000);}}
        renderRawConsole();setSourceStatus('Receiving / '+liveReadings.size+' of 10 devices');};
      stream.onerror=()=>{if(liveStream===stream)setSourceStatus('Connection interrupted / retrying automatically');};
