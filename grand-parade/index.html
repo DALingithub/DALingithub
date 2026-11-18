@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>The Grand Parade / Audio Patch v0.7 — Three-Layer PM Mapping</title>
+<title>The Grand Parade / Audio Patch v0.7.1 — Air Column Sound</title>
 <style>
 
 :root {
@@ -139,7 +139,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
 
 </head>
 <body>
-<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.7 &nbsp; / &nbsp; SIMULATED</span></div></header>
+<header><div class="container"><div class="masthead"><strong>THE GRAND PARADE</strong><span class="lab">ANTIPHŌNON / AUDIO PATCH</span></div><span class="version" id="sourceBadge">v0.7.1 &nbsp; / &nbsp; SIMULATED</span></div></header>
 <main class="container">
   <nav class="toolbar" aria-label="Transport">
     <button class="btn primary" id="playBtn">START</button>
@@ -360,7 +360,27 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     if(!active||!ctx||v.muted||(solo!==null&&solo!==v.i))return;
     const f=hz(midi),base=Math.max(.015,Math.min(.13,strength)),release=.22;
     switch(v.type){
-      case 'air':{const e=envNode(v.bus,when,dur,base*.54,.12,.55);oscillator(e,f,when,dur+.35,'sine');oscillator(e,f*2,when,dur+.35,'sine',{detune:5});noiseBurst(v.bus,when,dur,base*.09,1000+colour*4000,1);break;}
+      case 'air':{
+       // Voice 01: preserve a clear flute-like core while PM controls audible breath / harmonics.
+       // Intentionally sensitive in the 0–3 µg/m³ range; not a pollution severity score.
+       const texture=clamp((v.absolute-.10)/.38,0,1);
+       const airMix=clamp(.32+influence*(texture-.32),.03,.97);
+       const core=envNode(v.bus,when,dur+.22,base*(.63-.10*airMix),.11,.54);
+       oscillator(core,f,when,dur+.40,'sine');
+       // Higher partials rise roughly threefold between PM2.5 0.8 and 3 at default settings.
+       const sheen=envNode(v.bus,when,dur+.18,base*(.025+.72*airMix),.085,.42);
+       oscillator(sheen,f*2,when,dur+.40,'sine',{detune:3});
+       oscillator(sheen,f*3,when,dur+.40,'sine',{detune:-5});
+       // Broad, filtered, gently enveloped airflow becomes more present and brighter.
+       const filter=ctx.createBiquadFilter();filter.type='bandpass';
+       filter.frequency.value=650+airMix*3800;filter.Q.value=.48;
+       const breathEnv=envNode(v.bus,when,dur+.12,base*(.12+2.15*airMix),.095,.44);
+       const hiss=ctx.createBufferSource();hiss.buffer=noise;hiss.loop=true;
+       hiss.connect(filter);filter.connect(breathEnv);
+       hiss.start(when,rand(Math.round(when*1000)+v.i*59)*2);
+       hiss.stop(when+dur+.62);
+       break;
+     }
       case 'fm':{const e=envNode(v.bus,when,dur,base*.75,.009,.25),carrier=ctx.createOscillator(),mod=ctx.createOscillator(),mg=ctx.createGain();carrier.type='sine';carrier.frequency.value=f;mod.frequency.value=f*(1.5+Math.round(colour*3)*.5);mg.gain.setValueAtTime(f*(.15+colour*1.5),when);mg.gain.exponentialRampToValueAtTime(Math.max(8,f*.035),when+dur+.12);mod.connect(mg);mg.connect(carrier.frequency);carrier.connect(e);mod.start(when);carrier.start(when);mod.stop(when+dur+.38);carrier.stop(when+dur+.38);break;}
       case 'hollow':{const filter=ctx.createBiquadFilter();filter.type='bandpass';filter.frequency.setValueAtTime(550+colour*1300,when);filter.Q.value=2+colour*5;const e=envNode(v.bus,when,dur,base*.82,.10,.36);filter.connect(e);oscillator(filter,f,when,dur+.35,'sawtooth');oscillator(e,f*.5,when,dur+.35,'sine');break;}
       case 'grains':{const count=3+Math.round(volatility*17*influence);for(let j=0;j<count;j++){const off=dur*(j/(count+1));noiseBurst(v.bus,when+off,.035+rand(j*71+bar)*.11,base*.13,420+f*2+colour*4200,1.4+colour*3);}break;}
@@ -541,7 +561,7 @@ input[type=range] { width:100%; height:14px; accent-color:var(--blue); cursor:po
     $('rawCsvBtn').addEventListener('click',downloadRawCSV);
     $('rawClearBtn').addEventListener('click',()=>{rawLog.length=0;rawMeasurements.clear();rawCount=0;renderRawConsole();});
     setInterval(()=>{if(rawMeasurements.size)renderRawConsole();},5000);
-   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.7 / API INPUT':'v0.7 / SIMULATED';}
+   function setSourceStatus(message){$('receiverStatus').textContent=message;$('patchDataState').textContent=liveConnected?'LIVE API / '+liveReadings.size+' DEVICES':'SIMULATED DATA';$('sourceBadge').textContent=liveConnected?'v0.7.1 / API INPUT':'v0.7.1 / SIMULATED';}
    function disconnectLive(){if(liveStream){liveStream.close();liveStream=null;}liveConnected=false;liveReadings.clear();rawMeasurements.clear();rawLog.length=0;rawCount=0;renderRawConsole();setSourceStatus('Simulation / no API connected');$('status').textContent=active?'PLAYING · simulated data':'READY / SIMULATED INPUT';}
    function connectLive(){
      const base=$('receiverUrl').value.trim().replace(/\/+$/,'');
